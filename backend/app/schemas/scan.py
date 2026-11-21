@@ -1,12 +1,15 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
 class RiskLevel(str, Enum):
-    SAFE = "SAFE"
+    LOW = "LOW"
     SUSPICIOUS = "SUSPICIOUS"
+    HIGH = "HIGH"
+    # Legacy / alias compatibility
+    SAFE = "SAFE"
     MALICIOUS = "MALICIOUS"
     UNKNOWN = "UNKNOWN"
 
@@ -17,35 +20,61 @@ class ScanType(str, Enum):
 
 
 class IndicatorSeverity(str, Enum):
-    INFO = "INFO"
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-    CRITICAL = "CRITICAL"
+    INFO = "info"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 
-class DetectionIndicator(BaseModel):
-    """Specific technical check or behavioral heuristic indicator."""
-    code: str = Field(..., description="Unique machine-readable indicator code")
-    name: str = Field(..., description="Human-readable indicator label")
-    severity: IndicatorSeverity = Field(..., description="Severity classification")
-    description: str = Field(..., description="Technical breakdown of the indicator")
-    detected: bool = Field(..., description="Whether the heuristic flagged on the target")
+class RuleIndicatorSchema(BaseModel):
+    """Detection rule finding returned by the analysis engine."""
+    rule_id: str = Field(..., description="Unique rule code, e.g. URL_001")
+    name: str = Field(..., description="Human-readable rule name")
+    severity: str = Field(..., description="Severity level: low, medium, high, critical")
+    description: str = Field(..., description="Detailed technical description")
+    score: int = Field(..., description="Score contribution")
+    evidence: str = Field(..., description="Matched token or parameter value")
 
 
 class URLScanRequest(BaseModel):
     """Payload to initiate a URL phishing inspection."""
     url: str = Field(
         ...,
-        min_length=3,
-        max_length=2048,
+        min_length=1,
+        max_length=4096,
         description="Target URL to be analyzed for phishing and malware threats",
         json_schema_extra={"example": "https://secure-login-verify-account.example.com"}
     )
     deep_analysis: bool = Field(
         default=False,
-        description="Whether to perform secondary reputation intelligence scans"
+        description="Optional flag for secondary analysis passes"
     )
+
+
+class URLScanResponse(BaseModel):
+    """Direct, transparent Phase 2 URL analysis report."""
+    scan_id: str = Field(..., description="Unique UUID tracking the scan execution")
+    url: str = Field(..., description="Target normalized URL")
+    status: str = Field("completed", description="Execution status of analysis")
+    risk_score: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Calculated risk score from 0 (lowest) to 100 (highest)"
+    )
+    risk_level: str = Field(..., description="Risk classification: LOW, SUSPICIOUS, or HIGH")
+    analysis_type: str = Field("rule_based", description="Engine pipeline type")
+    summary: str = Field(..., description="Objective heuristic finding overview")
+    features: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Structured lexical and structural extracted features"
+    )
+    indicators: List[RuleIndicatorSchema] = Field(
+        default_factory=list,
+        description="Individual triggered detection indicators"
+    )
+    analyzed_at: str = Field(..., description="ISO-8601 UTC timestamp")
 
 
 class EmailScanRequest(BaseModel):
@@ -69,34 +98,37 @@ class EmailScanRequest(BaseModel):
     )
 
 
+class DetectionIndicator(BaseModel):
+    """Specific technical check or behavioral heuristic indicator (for Email/Legacy)."""
+    code: str = Field(..., description="Unique machine-readable indicator code")
+    name: str = Field(..., description="Human-readable indicator label")
+    severity: str = Field(..., description="Severity classification")
+    description: str = Field(..., description="Technical breakdown of the indicator")
+    detected: bool = Field(..., description="Whether the heuristic flagged on the target")
+
+
 class ScanResultPayload(BaseModel):
-    """Detailed threat assessment report for an inspected artifact."""
+    """Legacy or wrapped scan result payload."""
     scan_id: str = Field(..., description="Unique UUID tracking the scan execution")
     target: str = Field(..., description="Normalized target (sanitized URL or email snippet)")
     scan_type: ScanType = Field(..., description="Inspection modality")
-    risk_level: RiskLevel = Field(..., description="Calculated threat verdict")
+    risk_level: str = Field(..., description="Calculated threat verdict")
     threat_score: int = Field(
         ...,
         ge=0,
         le=100,
-        description="Consolidated risk score from 0 (harmless) to 100 (critical danger)"
+        description="Consolidated risk score from 0 to 100"
     )
     summary: str = Field(..., description="Executive threat overview")
     indicators: List[DetectionIndicator] = Field(
         default_factory=list,
         description="Granular detection indicators and telemetry"
     )
-    engine_status: str = Field(
-        "engine_pending",
-        description="Execution status of the automated analysis pipeline"
-    )
-    phase: str = Field(
-        "Phase 1: Project Foundation",
-        description="Current engineering milestone of the PhishLens platform"
-    )
+    engine_status: str = Field("completed", description="Execution status")
+    phase: str = Field("Phase 2: URL Detection Engine", description="Milestone")
     analyzed_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
-        description="UTC timestamp of the analysis execution"
+        description="UTC timestamp"
     )
 
 
@@ -105,7 +137,7 @@ class ScanHistoryItem(BaseModel):
     id: str = Field(..., description="Unique scan identifier")
     target: str = Field(..., description="Inspected target (URL or email preview)")
     scan_type: ScanType = Field(..., description="URL or EMAIL")
-    risk_level: RiskLevel = Field(..., description="Risk verdict")
+    risk_level: str = Field(..., description="Risk verdict")
     threat_score: int = Field(..., ge=0, le=100, description="Score 0-100")
     engine_status: str = Field(..., description="Analysis status")
     created_at: datetime = Field(..., description="Scan timestamp")

@@ -1,100 +1,134 @@
-# PhishLens — Architecture Specification (Phase 1)
+# PhishLens — Architecture Specification (Phase 2)
 
 **Tagline:** *See the threat behind the link.*  
-**Milestone:** Phase 1 — Project Foundation
+**Milestone:** Phase 2 — Deterministic URL Detection Engine
 
 ---
 
 ## 1. System Overview
 
-PhishLens is an enterprise-grade phishing detection and threat intelligence platform built for modern security teams. Rather than naively fetching and rendering untrusted links (which introduces Remote Code Execution and SSRF hazards), PhishLens operates on a **Zero-Fetch Sandbox** philosophy:
+PhishLens is an enterprise-grade phishing detection and threat intelligence platform built for modern security teams. Rather than naively fetching and executing untrusted links (which introduces Remote Code Execution, malware delivery, and SSRF hazards), PhishLens operates on a **Zero-Fetch Sandbox** paradigm.
+
+In Phase 2, the placeholder HTTP 501 endpoint has been superseded by a **deterministic, local, zero-network rule-based detection engine**:
 
 ```
-[ User Input (URL/Email) ]
+[ User Submitted URL ]
            │
            ▼
-[ Canonical Normalization & RFC 3986 Sanitization ]
+[ URLParser ] (Strict RFC 3986 Parsing, IDNA/Punycode, Port & Scheme Validation)
            │
            ▼
-[ SSRF Shield (IP/Subnet & Protocol Boundary Check) ]
-           │
-           ├── Block internal / loopback / metadata (422)
+[ FeatureExtractor ] (Extracts 14 Lexical & Structural Vectors)
+   ├─ Distinguishes Hostname vs. Path vs. Query Strings
+   ├─ Counts Lengths, Subdomains, Percent-Encodings, Special Characters
+   └─ Maps Documented Suspicious Security Keywords & Brand Tokens
            │
            ▼
-[ Phase 1 Foundation Pipeline Handshake (501 / Queued Telemetry) ]
+[ RuleEngine ] (Evaluates 14 Independent Configurable Detection Rules)
+   ├─ URL_001: IP Address Host (Score: 25)
+   ├─ URL_002: Userinfo @ Authority Obfuscation (Score: 25)
+   ├─ URL_003: Punycode / IDN Host (Score: 15)
+   ├─ URL_004: Excessive URL Length (Score: 10-15)
+   ├─ URL_005: Abnormal Hostname Depth & Subdomains (Score: 15)
+   ├─ URL_006: Multiple Hostname Hyphens (Score: 15-20)
+   ├─ URL_007: Suspicious Keywords in Hostname (Score: 20)
+   ├─ URL_008: Suspicious Keywords in Path/Query (Score: 5)
+   ├─ URL_009: Targeted Brand in Hostname (Score: 25)
+   ├─ URL_010: URL Shortener Service (Score: 10)
+   ├─ URL_011: Insecure HTTP Protocol (Score: 10)
+   ├─ URL_012: Non-Standard Web Port (Score: 15)
+   ├─ URL_013: High Percent-Encoding Density (Score: 10)
+   └─ URL_014: High Special Character Density (Score: 10)
            │
-           ▼ (Scheduled Phase 2)
-[ Multi-Vector Heuristics & ML Detection Engines ]
-   ├─ IDN Punycode Homoglyph Detector
-   ├─ Shannon Entropy & DGA Profiler
-   ├─ NLP Sentiment & Urgency Analyzer
-   └─ Threat Intelligence Feed Cross-Correlation
+           ▼
+[ RiskScorer ] (Dampening Curve, Clamping to [0, 100], Objective Summary)
+   ├─ 0–24:   LOW RISK
+   ├─ 25–59:  SUSPICIOUS
+   └─ 60–100: HIGH RISK
+           │
+           ▼
+[ Database Record & Real-Time API Response (HTTP 200 OK) ]
 ```
 
 ---
 
-## 2. Monorepo Organization
+## 2. Directory Structure
 
 ```
-phishlens/
-├── frontend/                     # Next.js 14 App Router, TypeScript, Tailwind
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx        # Global dark cybersecurity theme & layout
-│   │   │   ├── page.tsx          # Landing page (hero, features, scanner)
-│   │   │   ├── dashboard/page.tsx# Analytics dashboard & Recharts
-│   │   │   ├── scanner/page.tsx  # Zero-fetch URL inspection interface
-│   │   │   ├── email-analyzer/page.tsx # NLP & spear-phishing heuristics
-│   │   │   ├── history/page.tsx  # Searchable audit history & detail view
-│   │   │   └── docs/page.tsx     # Developer API interactive documentation
-│   │   ├── components/           # Reusable atomic UI components
-│   │   └── lib/                  # Types, API client, demonstration datasets
-│   ├── package.json
-│   └── tailwind.config.ts
-├── backend/                      # Python FastAPI, SQLAlchemy, Pydantic
-│   ├── app/
-│   │   ├── api/v1/               # Versioned REST routers & endpoints
-│   │   │   ├── endpoints/
-│   │   │   │   ├── health.py     # System telemetry & database probe
-│   │   │   │   └── scans.py      # URL / email inspection & listing
-│   │   │   └── api.py
-│   │   ├── core/                 # Config, settings, SSRF security guardrails
-│   │   ├── db/                   # Database engine, sessionmaker, fallback
-│   │   ├── models/               # SQLAlchemy schema definitions
-│   │   ├── schemas/              # Pydantic v2 request/response models
-│   │   └── services/             # URL & email preprocessing services
-│   ├── tests/                    # Pytest & unit test suite
-│   ├── requirements.txt
-│   └── run_tests.py
-├── docs/                         # System architecture & API specifications
-│   ├── ARCHITECTURE.md
-│   └── API_REFERENCE.md
-├── README.md
-└── .gitignore
+backend/
+├── app/
+│   ├── api/
+│   │   └── v1/
+│   │       ├── endpoints/
+│   │       │   ├── health.py        # System health & telemetry
+│   │       │   └── scans.py         # POST /scan/url (200), POST /scan/email (501), GET /scans
+│   │       └── api.py
+│   ├── core/
+│   │   ├── config.py                # Environment settings & SSRF blocked ranges
+│   │   └── security.py              # Log sanitization & hashing
+│   ├── db/
+│   │   └── session.py               # SQLite / PostgreSQL auto-fallback sessionmaker
+│   ├── models/
+│   │   └── scan.py                  # ScanRecord & ThreatIndicatorRecord ORM models
+│   ├── schemas/
+│   │   ├── common.py                # APIResponse envelope & HealthResponse
+│   │   └── scan.py                  # URLScanRequest, URLScanResponse, RuleIndicatorSchema
+│   ├── services/
+│   │   ├── detection/               # Phase 2 Deterministic URL Engine
+│   │   │   ├── url_parser.py        # Strict parsing, IDNA normalization, port validation
+│   │   │   ├── feature_extractor.py # 14 lexical & structural vectors
+│   │   │   ├── rule_engine.py       # Independent rule evaluators & weights
+│   │   │   ├── risk_scorer.py       # Boundary scoring & non-exaggerated summaries
+│   │   │   └── analyzer.py          # Decoupled engine orchestrator
+│   │   ├── email_service.py         # Email heuristics preprocessor
+│   │   └── url_service.py           # Service adapter layer
+│   └── main.py                      # FastAPI lifespan, CORS, and exception handlers
+└── tests/
+    ├── test_detection_engine.py     # Parser, features, rules, scoring & zero-network proof
+    ├── test_scans.py                # API endpoint HTTP responses & validation
+    ├── test_health.py               # Health probe checks
+    └── test_api_endpoints.py        # Route unit tests
 ```
 
 ---
 
-## 3. Security Guardrails
+## 3. The 14 Extracted Feature Vectors
 
-### 3.1 Zero-Fetch Guarantee
-User-submitted URLs are never visited or fetched over raw TCP/HTTP sockets from backend workers. This eliminates Server-Side Request Forgery (SSRF) and prevents alerting threat actors of scanner probing.
-
-### 3.2 SSRF Guardrail Boundary
-Before any target is processed, the hostname is resolved and verified:
-- **Loopback IPs:** `127.0.0.0/8`, `::1`
-- **Private Subnets:** `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
-- **Cloud Metadata Endpoints:** `169.254.169.254`, `fe80::/10`
-- **Unauthorized Protocols:** Only `http` and `https` schemes are admitted (`file://`, `gopher://`, `ftp://` rejected).
-
-### 3.3 Privacy-Preserving Logging
-Raw email bodies and credentials are never stored in plain text server logs. Content is summarized via salted SHA-256 hashes and token length indicators.
+| # | Feature Name | Type | Description |
+|---|---|---|---|
+| 1 | `url_length` | Integer | Total length of canonical normalized URL |
+| 2 | `hostname_length` | Integer | Total character length of domain/host |
+| 3 | `num_subdomains` | Integer | Count of subdomain levels preceding root domain |
+| 4 | `is_ip_address` | Boolean | `true` if host is raw IPv4 or IPv6 address |
+| 5 | `is_https` | Boolean | `true` if scheme is `https`, `false` if `http` |
+| 6 | `has_at_symbol` | Boolean | `true` if userinfo or `@` authority symbol is present |
+| 7 | `suspicious_keywords` | Object | Keyword occurrences mapped to `in_hostname`, `in_path`, `in_query` |
+| 8 | `is_shortened_url` | Boolean | Matches known shortening services (bit.ly, t.co, etc.) |
+| 9 | `has_punycode` | Boolean | Detects IDN encoding (`xn--` or converted non-ASCII) |
+| 10 | `num_special_characters` | Integer | Count of delimiter and special symbols |
+| 11 | `num_percent_encoded` | Integer | Count of `%xx` escape sequences in target |
+| 12 | `has_unusual_port` | Boolean | `true` if explicit port is outside standard 80/443 |
+| 13 | `hostname_hyphens` | Integer | Count of hyphens (`-`) embedded in the host label |
+| 14 | `suspicious_brand_keywords` | Object | High-value brand names in `in_hostname`, `in_path`, `in_query` |
 
 ---
 
-## 4. Phase 1 Execution Model
+## 4. Scoring Methodology & Boundaries
 
-Under Phase 1:
-1. Endpoints `/api/v1/scan/url` and `/api/v1/scan/email` strictly validate incoming request payloads.
-2. In accordance with platform integrity requirements, successful validation responds with **HTTP 501 Not Implemented**, returning a structured Phase 1 preview confirming pipeline receipt while designating the detection engine as `engine_pending`.
-3. The frontend displays actionable telemetry indicators, status badges, and threat gauges communicating the Phase 1 state transparently.
+The risk scoring engine produces an integer score bounded strictly between $0$ and $100$.
+
+### Threshold Classifications
+- **0 – 24 (LOW RISK):** Minimal or baseline indicators observed. Does not guarantee safety.
+- **25 – 59 (SUSPICIOUS):** Notable structural anomalies (e.g. shortening service, unusual port, hyphen stuffing).
+- **60 – 100 (HIGH RISK):** Compounded severe threats (e.g. IP host, `@` authority spoofing, brand targeting).
+
+### Diminishing Returns Dampening
+When the raw indicator sum exceeds 60, dampening is applied to avoid saturation from overlapping rules:
+$$\text{Score} = \min\left(100, 60 + \lfloor (\text{RawSum} - 60) \times 0.85 \rfloor\right)$$
+
+---
+
+## 5. Security & Zero-Network Guarantee
+
+- **Zero Outbound Connections:** The analyzer never opens TCP sockets, never resolves DNS records via system resolvers, and never renders DOM trees.
+- **Verified Offline Test Suite:** Automated test `test_zero_network_request_guarantee` monkeypatches `socket.socket`, `socket.gethostbyname`, `socket.create_connection`, and `urllib.request.urlopen` to raise an assertion error if any network operation is attempted.

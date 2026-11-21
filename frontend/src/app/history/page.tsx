@@ -1,23 +1,21 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { RiskBadge } from "@/components/RiskBadge";
+import { fetchScans } from "@/lib/api";
 import { DEMO_RECENT_SCANS } from "@/lib/mockData";
-import { ScanHistoryItem, RiskLevel, ScanType } from "@/lib/types";
+import { ScanHistoryItem } from "@/lib/types";
 import {
   Search,
   Filter,
   History,
   Clock,
-  ArrowUpDown,
   ExternalLink,
-  ShieldCheck,
-  ShieldAlert,
-  AlertTriangle,
   X,
-  Layers,
   Terminal,
+  RefreshCw,
+  Database,
 } from "lucide-react";
 
 export default function HistoryPage() {
@@ -25,23 +23,61 @@ export default function HistoryPage() {
   const [riskFilter, setRiskFilter] = useState<string>("ALL");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [selectedScan, setSelectedScan] = useState<ScanHistoryItem | null>(null);
+  const [dbScans, setDbScans] = useState<ScanHistoryItem[]>([]);
+  const [isLiveFromBackend, setIsLiveFromBackend] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  const loadRecords = () => {
+    setLoading(true);
+    fetchScans(50, 0)
+      .then((res) => {
+        if (res && res.items && res.items.length > 0) {
+          setDbScans(res.items);
+          setIsLiveFromBackend(true);
+        } else {
+          // If no database scans recorded yet, use historical demonstration records
+          setDbScans(DEMO_RECENT_SCANS);
+          setIsLiveFromBackend(false);
+        }
+      })
+      .catch(() => {
+        setDbScans(DEMO_RECENT_SCANS);
+        setIsLiveFromBackend(false);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    loadRecords();
+  }, []);
 
   // Filtered scans list
   const filteredScans = useMemo(() => {
-    return DEMO_RECENT_SCANS.filter((scan) => {
+    return dbScans.filter((scan) => {
       const matchesSearch =
         scan.target.toLowerCase().includes(searchTerm.toLowerCase()) ||
         scan.id.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesRisk =
-        riskFilter === "ALL" || scan.risk_level === riskFilter;
+      const normRisk = (scan.risk_level || "").toUpperCase();
+      let matchesRisk = true;
+      if (riskFilter !== "ALL") {
+        if (riskFilter === "LOW") {
+          matchesRisk = normRisk === "LOW" || normRisk === "SAFE";
+        } else if (riskFilter === "SUSPICIOUS") {
+          matchesRisk = normRisk === "SUSPICIOUS";
+        } else if (riskFilter === "HIGH") {
+          matchesRisk = normRisk === "HIGH" || normRisk === "MALICIOUS";
+        }
+      }
 
       const matchesType =
         typeFilter === "ALL" || scan.scan_type === typeFilter;
 
       return matchesSearch && matchesRisk && matchesType;
     });
-  }, [searchTerm, riskFilter, typeFilter]);
+  }, [dbScans, searchTerm, riskFilter, typeFilter]);
 
   return (
     <div className="flex-1 flex flex-col md:flex-row w-full">
@@ -51,16 +87,36 @@ export default function HistoryPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-border/60">
           <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-main tracking-tight">
-              Security Audit & Scan History
-            </h1>
-            <p className="text-xs text-slate-muted mt-1">
-              Searchable chronological record of analyzed URLs, emails, and threat classifications.
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-main tracking-tight">
+                Security Audit & Scan History
+              </h1>
+              {isLiveFromBackend ? (
+                <span className="px-2 py-0.5 rounded bg-threat-safe/10 border border-threat-safe/30 text-threat-safe font-mono text-[10px] font-bold">
+                  Live Backend Sync
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded bg-card border border-slate-border text-slate-muted font-mono text-[10px] font-bold">
+                  Demo Baseline Dataset
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-muted">
+              Audit log of submitted and analyzed URL threats. Real scans executed via URL Scanner are persisted to the database.
             </p>
           </div>
-          <span className="text-xs font-mono text-slate-muted bg-card px-3 py-1.5 rounded-lg border border-slate-border">
-            {filteredScans.length} Records Filtered
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadRecords}
+              className="px-2.5 py-1.5 rounded-lg bg-card hover:bg-card-hover border border-slate-border text-xs text-slate-muted hover:text-white inline-flex items-center gap-1.5"
+            >
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+              <span>Refresh</span>
+            </button>
+            <span className="text-xs font-mono text-slate-muted bg-card px-3 py-1.5 rounded-lg border border-slate-border">
+              {filteredScans.length} Records
+            </span>
+          </div>
         </div>
 
         {/* Filters and Search Bar */}
@@ -73,7 +129,7 @@ export default function HistoryPage() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search target by domain, email subject, or scan ID..."
+                placeholder="Search target by domain, path, or scan ID..."
                 className="w-full bg-background border border-slate-border rounded-lg pl-9 pr-4 py-2 text-xs text-slate-main placeholder-slate-subtle focus:outline-none focus:border-primary font-mono"
               />
             </div>
@@ -81,7 +137,7 @@ export default function HistoryPage() {
             {/* Risk Filter */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
               <span className="text-[11px] font-mono text-slate-subtle uppercase mr-1">Risk:</span>
-              {["ALL", "SAFE", "SUSPICIOUS", "MALICIOUS"].map((risk) => (
+              {["ALL", "LOW", "SUSPICIOUS", "HIGH"].map((risk) => (
                 <button
                   key={risk}
                   type="button"
@@ -125,10 +181,10 @@ export default function HistoryPage() {
               <thead className="bg-background-secondary/80 border-b border-slate-border/80 text-slate-subtle font-mono uppercase text-[10px]">
                 <tr>
                   <th className="py-3 px-4 font-semibold">Scan ID</th>
-                  <th className="py-3 px-4 font-semibold">Target / Subject</th>
+                  <th className="py-3 px-4 font-semibold">Target / Domain</th>
                   <th className="py-3 px-4 font-semibold">Type</th>
-                  <th className="py-3 px-4 font-semibold">Verdict</th>
-                  <th className="py-3 px-4 font-semibold">Threat Score</th>
+                  <th className="py-3 px-4 font-semibold">Risk Classification</th>
+                  <th className="py-3 px-4 font-semibold">Score</th>
                   <th className="py-3 px-4 font-semibold">Timestamp</th>
                   <th className="py-3 px-4 font-semibold text-right">Details</th>
                 </tr>
@@ -147,7 +203,7 @@ export default function HistoryPage() {
                       onClick={() => setSelectedScan(scan)}
                       className="hover:bg-card-hover/80 cursor-pointer transition-colors"
                     >
-                      <td className="py-3 px-4 text-slate-muted font-mono text-[11px]">
+                      <td className="py-3 px-4 text-slate-muted font-mono text-[11px] truncate max-w-[120px]">
                         {scan.id}
                       </td>
                       <td className="py-3 px-4 text-slate-main max-w-[280px] truncate font-sans font-medium">
@@ -164,9 +220,9 @@ export default function HistoryPage() {
                       <td className="py-3 px-4">
                         <span
                           className={`font-bold ${
-                            scan.threat_score >= 70
+                            scan.threat_score >= 60
                               ? "text-threat-danger"
-                              : scan.threat_score >= 30
+                              : scan.threat_score >= 25
                               ? "text-threat-warning"
                               : "text-threat-safe"
                           }`}
@@ -204,8 +260,8 @@ export default function HistoryPage() {
               <div className="flex items-center justify-between border-b border-slate-border/80 pb-3">
                 <div className="flex items-center gap-2">
                   <Terminal className="w-4 h-4 text-accent" />
-                  <span className="font-mono text-xs font-bold text-slate-main">
-                    Record Telemetry: {selectedScan.id}
+                  <span className="font-mono text-xs font-bold text-slate-main truncate max-w-xs">
+                    Audit Telemetry: {selectedScan.id}
                   </span>
                 </div>
                 <button
@@ -220,7 +276,7 @@ export default function HistoryPage() {
               <div className="space-y-3 text-xs">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-subtle block">
-                    Target
+                    Inspected Target
                   </span>
                   <p className="font-mono text-accent text-sm break-all font-semibold mt-0.5">
                     {selectedScan.target}
@@ -229,13 +285,13 @@ export default function HistoryPage() {
 
                 <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-background-secondary border border-slate-border/50">
                   <div>
-                    <span className="text-[10px] text-slate-subtle uppercase block">Classification</span>
+                    <span className="text-[10px] text-slate-subtle uppercase block">Risk Level</span>
                     <div className="mt-1">
                       <RiskBadge level={selectedScan.risk_level} size="sm" />
                     </div>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-subtle uppercase block">Threat Score</span>
+                    <span className="text-[10px] text-slate-subtle uppercase block">Risk Score</span>
                     <span className="font-mono text-base font-bold text-slate-main mt-0.5 block">
                       {selectedScan.threat_score} / 100
                     </span>
@@ -247,23 +303,21 @@ export default function HistoryPage() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-subtle uppercase block">Timestamp</span>
-                    <span className="font-mono text-slate-main mt-0.5 block text-[11px]">
-                      {new Date(selectedScan.created_at).toUTCString()}
+                    <span className="text-[10px] text-slate-subtle uppercase block">Status</span>
+                    <span className="font-mono text-threat-safe mt-0.5 block">
+                      {selectedScan.engine_status}
                     </span>
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-background-secondary border border-slate-border/50">
                   <span className="text-[10px] text-slate-subtle uppercase font-bold block mb-1">
-                    Telemetry Indicators
+                    Analysis Record Summary
                   </span>
-                  <ul className="space-y-1 font-mono text-[11px] text-slate-muted">
-                    <li>• SSRF Shield Check: Passed</li>
-                    <li>• RFC Canonical Normalization: Valid</li>
-                    <li>• Threat Feed Hash: Match recorded</li>
-                    <li>• Engine Pipeline: Phase 1 Validated</li>
-                  </ul>
+                  <p className="text-slate-muted text-[11px] leading-relaxed">
+                    Evaluated via Phase 2 deterministic detection pipeline without external network connections.
+                    Features, lexical weights, and boundary indicators verified.
+                  </p>
                 </div>
               </div>
 

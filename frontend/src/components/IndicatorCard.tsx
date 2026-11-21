@@ -1,36 +1,42 @@
 import React from "react";
-import { DetectionIndicator } from "@/lib/types";
-import { AlertCircle, CheckCircle2, Info } from "lucide-react";
+import { RuleIndicator } from "@/lib/types";
+import { AlertCircle, AlertTriangle, Info, ShieldAlert } from "lucide-react";
 
 interface IndicatorCardProps {
-  indicator: DetectionIndicator;
+  indicator: RuleIndicator | any;
 }
 
 export const IndicatorCard: React.FC<IndicatorCardProps> = ({ indicator }) => {
-  const getSeverityBadge = (severity: string) => {
-    switch (severity.toUpperCase()) {
-      case "CRITICAL":
+  const severity = (indicator.severity || "info").toLowerCase();
+
+  const getSeverityBadge = (sev: string) => {
+    switch (sev) {
+      case "critical":
+        return "bg-threat-danger/20 text-threat-danger border-threat-danger/40";
+      case "high":
         return "bg-threat-danger/10 text-threat-danger border-threat-danger/30";
-      case "HIGH":
-        return "bg-threat-danger/10 text-threat-danger border-threat-danger/20";
-      case "MEDIUM":
+      case "medium":
         return "bg-threat-warning/10 text-threat-warning border-threat-warning/30";
-      case "LOW":
+      case "low":
         return "bg-threat-safe/10 text-threat-safe border-threat-safe/30";
-      case "INFO":
+      case "info":
       default:
         return "bg-primary/10 text-primary border-primary/30";
     }
   };
 
+  const ruleId = indicator.rule_id || indicator.code || "RULE";
+
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-lg border border-slate-border/50 bg-background-secondary/60 hover:border-slate-border transition-colors">
       <div className="flex items-start gap-3">
         <div className="mt-0.5">
-          {indicator.detected ? (
-            <AlertCircle className="w-5 h-5 text-threat-danger" />
+          {severity === "critical" || severity === "high" ? (
+            <ShieldAlert className="w-5 h-5 text-threat-danger" />
+          ) : severity === "medium" ? (
+            <AlertTriangle className="w-5 h-5 text-threat-warning" />
           ) : (
-            <CheckCircle2 className="w-5 h-5 text-threat-safe" />
+            <AlertCircle className="w-5 h-5 text-threat-safe" />
           )}
         </div>
         <div>
@@ -38,32 +44,33 @@ export const IndicatorCard: React.FC<IndicatorCardProps> = ({ indicator }) => {
             <span className="font-semibold text-sm text-slate-main">
               {indicator.name}
             </span>
-            <span className="font-mono text-[10px] text-slate-subtle bg-card px-1.5 py-0.5 rounded border border-slate-border/40">
-              {indicator.code}
+            <span className="font-mono text-[10px] text-accent bg-card px-1.5 py-0.5 rounded border border-slate-border/60 font-bold">
+              {ruleId}
             </span>
+            {indicator.score !== undefined && (
+              <span className="font-mono text-[10px] text-slate-muted bg-background px-1.5 py-0.5 rounded border border-slate-border">
+                +{indicator.score} pts
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-muted mt-1 leading-relaxed max-w-xl">
             {indicator.description}
           </p>
+          {indicator.evidence && (
+            <div className="mt-1.5 font-mono text-[11px] text-accent/90 bg-background/80 px-2 py-0.5 rounded border border-slate-border/40 inline-block">
+              Evidence: <span className="text-slate-main font-semibold">{indicator.evidence}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2 self-end sm:self-center">
+      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
         <span
           className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${getSeverityBadge(
-            indicator.severity
+            severity
           )}`}
         >
-          {indicator.severity}
-        </span>
-        <span
-          className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
-            indicator.detected
-              ? "bg-threat-danger/20 text-threat-danger"
-              : "bg-threat-safe/10 text-threat-safe"
-          }`}
-        >
-          {indicator.detected ? "Triggered" : "Passed"}
+          {severity}
         </span>
       </div>
     </div>

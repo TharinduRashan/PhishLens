@@ -25,22 +25,21 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(res.data.status, "healthy")
         self.assertIn("url_inspection_v1", res.data.capabilities)
 
-    def test_scan_url_501_not_implemented(self):
+    def test_scan_url_phase2_success(self):
         req = URLScanRequest(url="https://secure-login-phish.net/account", deep_analysis=False)
         res = scan_url(payload=req, db=self.db)
-        self.assertEqual(res.status_code, 501)
-        import json
-        body = json.loads(res.body.decode("utf-8"))
-        self.assertEqual(body["status"], "not_implemented")
-        self.assertEqual(body["data"]["scan_type"], "URL")
-        self.assertEqual(body["data"]["engine_status"], "engine_pending")
+        self.assertEqual(res["status"], "completed")
+        self.assertEqual(res["analysis_type"], "rule_based")
+        self.assertIn("features", res)
+        self.assertIn("indicators", res)
+        self.assertIn(res["risk_level"], ("LOW", "SUSPICIOUS", "HIGH"))
 
-    def test_scan_url_ssrf_protection_exception(self):
-        req = URLScanRequest(url="http://127.0.0.1:8000/admin")
+    def test_scan_url_unsupported_scheme(self):
+        req = URLScanRequest(url="gopher://127.0.0.1:8000")
         with self.assertRaises(HTTPException) as ctx:
             scan_url(payload=req, db=self.db)
-        self.assertEqual(ctx.exception.status_code, 422)
-        self.assertIn("SSRF Shield Block", ctx.exception.detail)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("Unsupported Scheme", ctx.exception.detail)
 
     def test_scan_email_501_not_implemented(self):
         req = EmailScanRequest(

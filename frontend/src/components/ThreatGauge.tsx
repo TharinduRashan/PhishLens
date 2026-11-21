@@ -14,27 +14,28 @@ export const ThreatGauge: React.FC<ThreatGaugeProps> = ({
   const strokeWidth = 12;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  // Use a 270 degree arc
+  // 270 degree arc
   const arcLength = circumference * 0.75;
+  const clampedScore = Math.max(0, Math.min(100, score));
   const strokeDashoffset = enginePending
     ? arcLength
-    : arcLength - (score / 100) * arcLength;
+    : arcLength - (clampedScore / 100) * arcLength;
 
   const getColor = (s: number) => {
     if (enginePending) return "#64748B";
-    if (s <= 25) return "#22C55E";
-    if (s <= 65) return "#F59E0B";
+    if (s <= 24) return "#22C55E";
+    if (s <= 59) return "#F59E0B";
     return "#EF4444";
   };
 
   const getLabel = (s: number) => {
     if (enginePending) return "PENDING ENGINE";
-    if (s <= 25) return "LOW RISK";
-    if (s <= 65) return "SUSPICIOUS";
-    return "CRITICAL DANGER";
+    if (s <= 24) return "LOW RISK (0–24)";
+    if (s <= 59) return "SUSPICIOUS (25–59)";
+    return "HIGH RISK (60–100)";
   };
 
-  const currentColor = getColor(score);
+  const currentColor = getColor(clampedScore);
 
   return (
     <div className="relative flex flex-col items-center justify-center">
@@ -80,7 +81,7 @@ export const ThreatGauge: React.FC<ThreatGaugeProps> = ({
         ) : (
           <>
             <span className="font-mono text-3xl font-extrabold text-slate-main">
-              {score}
+              {clampedScore}
             </span>
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-muted">
               / 100
@@ -91,10 +92,10 @@ export const ThreatGauge: React.FC<ThreatGaugeProps> = ({
 
       <div className="mt-2 text-center">
         <span
-          className="text-xs font-bold tracking-widest uppercase"
+          className="text-xs font-bold tracking-widest uppercase font-mono"
           style={{ color: currentColor }}
         >
-          {getLabel(score)}
+          {getLabel(clampedScore)}
         </span>
       </div>
     </div>

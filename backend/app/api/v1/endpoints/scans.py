@@ -1,13 +1,14 @@
+import hashlib
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from app.core.security import InvalidURLError, SSRFProtectionError
 from app.db.session import get_db
-from app.models.scan import ScanRecord
+from app.models.scan import ScanRecord, ThreatIndicatorRecord
 from app.schemas.common import APIResponse
 from app.schemas.scan import (
     URLScanRequest,
+    URLScanResponse,
     EmailScanRequest,
     ScanResultPayload,
     ScanHistoryResponse,
@@ -17,24 +18,33 @@ from app.schemas.scan import (
 )
 from app.services.url_service import URLInspectionService
 from app.services.email_service import EmailInspectionService
+from app.services.detection.url_parser import (
+    URLValidationError,
+    UnsupportedSchemeError,
+    InvalidHostnameError,
+    InvalidPortError,
+)
 
 router = APIRouter()
 
 
 @router.post(
     "/scan/url",
-    response_model=APIResponse[ScanResultPayload],
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="Submit URL for Threat Inspection",
+    response_model=URLScanResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Analyze URL for Phishing & Threats",
     description=(
-        "Validates and sanitizes a target URL against SSRF and syntax rules. "
-        "In Phase 1, validates request structures and returns HTTP 501 Not Implemented "
-        "with details on the queued Phase 2 detection engine."
+        "Executes Phase 2 deterministic, zero-network URL threat analysis. "
+        "Extracts structural, lexical, and behavioral features and applies transparent "
+        "rule-based risk heuristics."
     ),
     responses={
-        501: {"description": "Detection engine scheduled for Phase 2 integration"},
-        400: {"description": "Invalid URL structure or scheme"},
-        422: {"description": "Target address blocked by SSRF protection guardrails"},
+        200: {
+            "description": "Deterministic rule-based analysis completed successfully",
+            "model": URLScanResponse,
+        },
+        400: {"description": "Malformed URL, unsupported scheme, or invalid port"},
+        422: {"description": "Validation error or unparseable target"},
     }
 )
 def scan_url(
@@ -46,32 +56,63 @@ def scan_url(
             raw_url=payload.url,
             deep_analysis=payload.deep_analysis
         )
-    except SSRFProtectionError as ssrf_err:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"SSRF Shield Block: {str(ssrf_err)}"
-        )
-    except InvalidURLError as url_err:
+    except UnsupportedSchemeError as scheme_err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"URL Validation Failed: {str(url_err)}"
+            detail=f"Unsupported Scheme: {str(scheme_err)}"
+        )
+    except InvalidPortError as port_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid Port: {str(port_err)}"
+        )
+    except (InvalidHostnameError, URLValidationError) as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"URL Validation Failed: {str(val_err)}"
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unable to process URL: {str(exc)}"
         )
 
-    # In Phase 1: Return explicit HTTP 501 Not Implemented response
-    # clearly communicating that active heuristics are scheduled for Phase 2.
-    response_data = {
-        "status": "not_implemented",
-        "message": (
-            "Phase 1: Project Foundation. URL successfully passed syntax and SSRF security validations. "
-            "The real-time threat intelligence and ML detection engine will be activated in Phase 2."
-        ),
-        "data": inspection,
-        "timestamp": inspection["analyzed_at"],
-    }
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content=response_data
-    )
+    # Persist real scan audit record to database
+    try:
+        scan_id = inspection["scan_id"]
+        target_url = inspection["url"]
+        target_hash = hashlib.sha256(target_url.encode("utf-8")).hexdigest()[:16]
+
+        record = ScanRecord(
+            id=scan_id,
+            target=target_url,
+            target_hash=target_hash,
+            scan_type="URL",
+            risk_level=inspection["risk_level"],
+            threat_score=inspection["risk_score"],
+            engine_status=inspection["status"],
+            summary=inspection["summary"],
+        )
+        db.add(record)
+
+        # Store indicators
+        for ind in inspection.get("indicators", []):
+            db.add(
+                ThreatIndicatorRecord(
+                    scan_id=scan_id,
+                    code=ind["rule_id"],
+                    name=ind["name"],
+                    severity=ind["severity"].upper(),
+                    description=ind["description"],
+                    detected=True,
+                )
+            )
+        db.commit()
+    except Exception:
+        # Non-blocking DB write failure for resilience
+        db.rollback()
+
+    return inspection
 
 
 @router.post(
@@ -81,10 +122,10 @@ def scan_url(
     summary="Submit Email Content for Phishing Analysis",
     description=(
         "Accepts email body and headers, sanitizes contents, and returns HTTP 501 Not Implemented "
-        "indicating that Phase 1 foundation is active and NLP heuristics are queued for Phase 2."
+        "indicating that NLP email heuristics are queued for future milestone integration."
     ),
     responses={
-        501: {"description": "NLP detection engine scheduled for Phase 2 integration"},
+        501: {"description": "NLP detection engine scheduled for future integration"},
         400: {"description": "Invalid email payload"},
     }
 )
@@ -107,8 +148,8 @@ def scan_email(
     response_data = {
         "status": "not_implemented",
         "message": (
-            "Phase 1: Project Foundation. Email sanitized and tokenized. "
-            "Natural Language Phishing heuristics and DKIM/SPF verifiers are scheduled for Phase 2."
+            "Email sanitized and tokenized. "
+            "Natural Language Phishing heuristics and DKIM/SPF verifiers are scheduled for subsequent integration."
         ),
         "data": inspection,
         "timestamp": inspection["analyzed_at"],
@@ -128,15 +169,15 @@ def scan_email(
 def list_scans(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    risk_level: Optional[RiskLevel] = None,
-    scan_type: Optional[ScanType] = None,
+    risk_level: Optional[str] = None,
+    scan_type: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     query = db.query(ScanRecord)
-    if risk_level:
-        query = query.filter(ScanRecord.risk_level == risk_level.value)
-    if scan_type:
-        query = query.filter(ScanRecord.scan_type == scan_type.value)
+    if risk_level and risk_level.upper() != "ALL":
+        query = query.filter(ScanRecord.risk_level == risk_level.upper())
+    if scan_type and scan_type.upper() != "ALL":
+        query = query.filter(ScanRecord.scan_type == scan_type.upper())
 
     total = query.count()
     records = query.order_by(ScanRecord.created_at.desc()).offset(offset).limit(limit).all()
@@ -145,8 +186,8 @@ def list_scans(
         ScanHistoryItem(
             id=r.id,
             target=r.target,
-            scan_type=ScanType(r.scan_type),
-            risk_level=RiskLevel(r.risk_level),
+            scan_type=ScanType.URL if r.scan_type == "URL" else ScanType.EMAIL,
+            risk_level=r.risk_level,
             threat_score=r.threat_score,
             engine_status=r.engine_status,
             created_at=r.created_at

@@ -1,4 +1,4 @@
-# PhishLens — REST API Reference (v1.0)
+# PhishLens — REST API Reference (v1.0 — Phase 2)
 
 Base URL: `http://localhost:8000/api/v1`
 
@@ -6,7 +6,94 @@ Base URL: `http://localhost:8000/api/v1`
 
 ## 1. Endpoints
 
-### 1.1 Platform Health Check
+### 1.1 URL Phishing Inspection
+`POST /api/v1/scan/url`
+
+Performs deterministic, local, zero-network URL inspection. Evaluates 14 structural features, scores independent rules, and returns an actionable threat assessment report.
+
+**Request Payload:**
+```json
+{
+  "url": "https://secure-login-verify-account.example.com",
+  "deep_analysis": false
+}
+```
+
+**Response `200 OK`:**
+```json
+{
+  "scan_id": "7f8b92d1-4e8c-48a2-9721-998ef2b3a199",
+  "url": "https://secure-login-verify-account.example.com",
+  "status": "completed",
+  "risk_score": 35,
+  "risk_level": "SUSPICIOUS",
+  "analysis_type": "rule_based",
+  "summary": "Moderate risk score (35/100) detected with indicators: Suspicious Security Keywords in Hostname, Multiple Hostname Hyphens. The target exhibits unusual structural or lexical attributes warranting heightened caution.",
+  "features": {
+    "url_length": 47,
+    "hostname_length": 39,
+    "num_subdomains": 2,
+    "is_ip_address": false,
+    "is_https": true,
+    "has_at_symbol": false,
+    "suspicious_keywords": {
+      "in_hostname": ["account", "login", "secure", "verify"],
+      "in_path": [],
+      "in_query": [],
+      "total": 4
+    },
+    "is_shortened_url": false,
+    "has_punycode": false,
+    "num_special_characters": 5,
+    "num_percent_encoded": 0,
+    "has_unusual_port": false,
+    "hostname_hyphens": 3,
+    "suspicious_brand_keywords": {
+      "in_hostname": [],
+      "in_path": [],
+      "in_query": [],
+      "total": 0
+    }
+  },
+  "indicators": [
+    {
+      "rule_id": "URL_007",
+      "name": "Suspicious Security Keywords in Hostname",
+      "severity": "high",
+      "description": "High-risk security or authentication keywords are embedded directly within the domain name labels.",
+      "score": 20,
+      "evidence": "Matched keywords in hostname: account, login, secure, verify"
+    },
+    {
+      "rule_id": "URL_006",
+      "name": "Multiple Hostname Hyphens",
+      "severity": "medium",
+      "description": "The hostname contains multiple hyphens, a technique frequently used to simulate official domain combinations.",
+      "score": 15,
+      "evidence": "Hyphen count in host: 3"
+    }
+  ],
+  "analyzed_at": "2026-11-22T04:15:00.000000+00:00"
+}
+```
+
+**Error `400 Bad Request` (Unsupported Scheme):**
+```json
+{
+  "detail": "Unsupported Scheme: Unsupported URL scheme 'ftp'. Only HTTP and HTTPS are accepted."
+}
+```
+
+**Error `400 Bad Request` (Invalid Port):**
+```json
+{
+  "detail": "Invalid Port: Port number 99999 is out of valid range (1–65535)."
+}
+```
+
+---
+
+### 1.2 Platform Health Check
 `GET /api/v1/health`
 
 Returns operational telemetry, uptime, database connectivity, and registered capabilities.
@@ -20,9 +107,9 @@ Returns operational telemetry, uptime, database connectivity, and registered cap
     "status": "healthy",
     "version": "0.1.0",
     "environment": "development",
-    "uptime_seconds": 128.45,
+    "uptime_seconds": 320.12,
     "database": "connected",
-    "timestamp": "2026-11-22T03:00:00Z",
+    "timestamp": "2026-11-22T04:15:00Z",
     "capabilities": [
       "url_inspection_v1",
       "email_heuristics_v1",
@@ -30,105 +117,16 @@ Returns operational telemetry, uptime, database connectivity, and registered cap
       "threat_database_sync"
     ]
   },
-  "timestamp": "2026-11-22T03:00:00Z"
+  "timestamp": "2026-11-22T04:15:00Z"
 }
 ```
 
 ---
 
-### 1.2 URL Phishing Inspection
-`POST /api/v1/scan/url`
+### 1.3 List Scan Audit Records
+`GET /api/v1/scans?limit=20&offset=0&risk_level=HIGH`
 
-Submits target URL for validation and zero-fetch inspection.
-
-**Request Payload:**
-```json
-{
-  "url": "https://secure-login-portal-auth.top/signin",
-  "deep_analysis": false
-}
-```
-
-**Response `501 Not Implemented` (Phase 1 Queued Engine):**
-```json
-{
-  "status": "not_implemented",
-  "message": "Phase 1: Project Foundation. URL successfully passed syntax and SSRF security validations. The real-time threat intelligence and ML detection engine will be activated in Phase 2.",
-  "data": {
-    "scan_id": "8f9024f2-95f2-4e4b-88a9-46294719bb44",
-    "target": "https://secure-login-portal-auth.top/signin",
-    "scan_type": "URL",
-    "risk_level": "UNKNOWN",
-    "threat_score": 0,
-    "summary": "URL 'secure-login-portal-auth.top' successfully validated against SSRF and syntax rules...",
-    "indicators": [
-      {
-        "code": "HEUR-HOMOGRAPH",
-        "name": "IDN Homograph & Punycode Check",
-        "severity": "HIGH",
-        "description": "Checks for visually ambiguous unicode homoglyphs mimicking authentic brands.",
-        "detected": false
-      }
-    ],
-    "engine_status": "engine_pending",
-    "phase": "Phase 1: Project Foundation",
-    "analyzed_at": "2026-11-22T03:00:00Z"
-  },
-  "timestamp": "2026-11-22T03:00:00Z"
-}
-```
-
-**Error `422 Unprocessable Content` (SSRF Violation):**
-```json
-{
-  "status": "error",
-  "error_type": "SSRFProtectionViolation",
-  "message": "SSRF Shield Block: Target host '127.0.0.1' is an internal or local reserved host."
-}
-```
-
----
-
-### 1.3 Email Phishing Analysis
-`POST /api/v1/scan/email`
-
-Submits email content and headers for spear-phishing heuristics.
-
-**Request Payload:**
-```json
-{
-  "content": "Urgent: Your corporate credentials have expired. Verify immediately at https://...",
-  "sender": "security@alert-corp-support.com",
-  "subject": "Action Required"
-}
-```
-
-**Response `501 Not Implemented`:**
-```json
-{
-  "status": "not_implemented",
-  "message": "Phase 1: Project Foundation. Email sanitized and tokenized. Natural Language Phishing heuristics and DKIM/SPF verifiers are scheduled for Phase 2.",
-  "data": {
-    "scan_id": "31b2ec51-3fa4-498c-8f19-b2230198aa77",
-    "target": "Action Required",
-    "scan_type": "EMAIL",
-    "risk_level": "UNKNOWN",
-    "threat_score": 0,
-    "indicators": [],
-    "engine_status": "engine_pending",
-    "phase": "Phase 1: Project Foundation",
-    "analyzed_at": "2026-11-22T03:00:00Z"
-  },
-  "timestamp": "2026-11-22T03:00:00Z"
-}
-```
-
----
-
-### 1.4 List Scan Records
-`GET /api/v1/scans?limit=20&offset=0&risk_level=MALICIOUS`
-
-Retrieves audit history with optional risk and type filtering.
+Retrieves persisted scan history records saved from user submissions.
 
 **Response `200 OK`:**
 ```json
@@ -136,19 +134,26 @@ Retrieves audit history with optional risk and type filtering.
   "status": "success",
   "message": "Retrieved 10 scan records.",
   "data": {
-    "total": 1428,
+    "total": 10,
     "items": [
       {
-        "id": "scan-9f81a-2026",
-        "target": "https://paypa1-account-verification-auth.top/signin",
+        "id": "7f8b92d1-4e8c-48a2-9721-998ef2b3a199",
+        "target": "https://secure-login-verify-account.example.com",
         "scan_type": "URL",
-        "risk_level": "MALICIOUS",
-        "threat_score": 94,
-        "engine_status": "flagged",
-        "created_at": "2026-11-22T02:45:10Z"
+        "risk_level": "SUSPICIOUS",
+        "threat_score": 35,
+        "engine_status": "completed",
+        "created_at": "2026-11-22T04:15:00Z"
       }
     ]
   },
-  "timestamp": "2026-11-22T03:00:00Z"
+  "timestamp": "2026-11-22T04:15:00Z"
 }
 ```
+
+---
+
+### 1.4 Email Phishing Analysis
+`POST /api/v1/scan/email`
+
+*(Queued for future NLP milestone)* Returns `HTTP 501 Not Implemented`.

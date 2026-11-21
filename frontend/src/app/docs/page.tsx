@@ -12,6 +12,7 @@ import {
   Lock,
   ExternalLink,
   Layers,
+  Cpu,
 } from "lucide-react";
 
 export default function DocsPage() {
@@ -39,30 +40,27 @@ console.log(health);`,
     scanUrl: {
       curl: `curl -X POST http://localhost:8000/api/v1/scan/url \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://secure-login-phish.net/account", "deep_analysis": false}'`,
+  -d '{"url": "https://secure-login-verify-account.example.com"}'`,
       python: `import requests
 
 payload = {
-    "url": "https://secure-login-phish.net/account",
-    "deep_analysis": False
+    "url": "https://secure-login-verify-account.example.com"
 }
 
-# Note: Phase 1 returns HTTP 501 Not Implemented with structured preview
+# Phase 2: Returns HTTP 200 OK with deterministic analysis
 response = requests.post("http://localhost:8000/api/v1/scan/url", json=payload)
 print("Status:", response.status_code)
-print("Data:", response.json())`,
+print("Result:", response.json())`,
       typescript: `const response = await fetch("http://localhost:8000/api/v1/scan/url", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    url: "https://secure-login-phish.net/account",
-    deep_analysis: false
+    url: "https://secure-login-verify-account.example.com"
   })
 });
 
-// Phase 1 yields HTTP 501 with structured queued telemetry
 const result = await response.json();
-console.log(result);`,
+console.log(result.risk_score, result.risk_level);`,
     },
     scanEmail: {
       curl: `curl -X POST http://localhost:8000/api/v1/scan/email \\
@@ -113,13 +111,13 @@ const scans = await response.json();`,
             <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-mono text-[11px] font-bold">
               API v1.0
             </span>
-            <span className="text-slate-subtle text-xs font-mono">Phase 1 Foundation</span>
+            <span className="text-threat-safe text-xs font-mono font-bold">Phase 2: URL Engine Live</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-main tracking-tight">
             PhishLens Threat Intelligence API
           </h1>
           <p className="text-xs sm:text-sm text-slate-muted mt-2 leading-relaxed">
-            RESTful cybersecurity APIs for automated URL inspection, spear-phishing heuristics, and SIEM telemetry integration.
+            RESTful cybersecurity APIs for deterministic, zero-network URL inspection, feature telemetry, and transparent risk scoring.
           </p>
         </div>
 
@@ -141,7 +139,79 @@ const scans = await response.json();`,
           ))}
         </div>
 
-        {/* Endpoint 1: Health */}
+        {/* Endpoint 1: POST /api/v1/scan/url */}
+        <section className="p-5 rounded-xl border border-slate-border bg-card space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-border/50 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary font-mono text-xs font-bold">
+                POST
+              </span>
+              <span className="font-mono text-xs sm:text-sm font-bold text-slate-main">
+                /api/v1/scan/url
+              </span>
+            </div>
+            <span className="text-xs font-mono text-threat-safe font-semibold">200 OK (Phase 2 Active)</span>
+          </div>
+
+          <p className="text-xs text-slate-muted">
+            Executes deterministic local analysis of target URL. Extracts 14 lexical and structural features and evaluates
+            independent detection rules offline without making remote network calls.
+          </p>
+
+          <div className="relative rounded-lg bg-background border border-slate-border/80 p-3.5 font-mono text-xs overflow-x-auto">
+            <button
+              onClick={() => handleCopy("url", codeSnippets.scanUrl[activeLang])}
+              className="absolute top-2.5 right-2.5 p-1 rounded bg-card text-slate-muted hover:text-white"
+            >
+              {copiedKey === "url" ? <Check size={14} className="text-threat-safe" /> : <Copy size={14} />}
+            </button>
+            <pre className="text-slate-main">{codeSnippets.scanUrl[activeLang]}</pre>
+          </div>
+
+          {/* Response Structure Documentation */}
+          <div className="p-4 rounded-lg bg-background-secondary border border-slate-border/60 text-xs font-mono space-y-2">
+            <span className="text-[10px] text-accent font-bold uppercase tracking-wider block">
+              Sample 200 OK Response Payload
+            </span>
+            <pre className="text-slate-main text-[11px] overflow-x-auto">{`{
+  "scan_id": "7f8b92d1-4e8c-48a2-9721-998ef2b3a199",
+  "url": "https://secure-login-verify-account.example.com",
+  "status": "completed",
+  "risk_score": 35,
+  "risk_level": "SUSPICIOUS",
+  "analysis_type": "rule_based",
+  "summary": "Moderate risk score (35/100) detected with indicators: Suspicious Security Keywords in Hostname...",
+  "features": {
+    "url_length": 47,
+    "hostname_length": 39,
+    "num_subdomains": 2,
+    "is_ip_address": false,
+    "is_https": true,
+    "has_at_symbol": false,
+    "suspicious_keywords": { "in_hostname": ["account", "login", "secure", "verify"], "total": 4 },
+    "is_shortened_url": false,
+    "has_punycode": false,
+    "num_special_characters": 5,
+    "num_percent_encoded": 0,
+    "has_unusual_port": false,
+    "hostname_hyphens": 3
+  },
+  "indicators": [
+    {
+      "rule_id": "URL_007",
+      "name": "Suspicious Security Keywords in Hostname",
+      "severity": "high",
+      "description": "High-risk security or authentication keywords are embedded directly within the domain name labels.",
+      "score": 20,
+      "evidence": "Matched keywords in hostname: account, login, secure, verify"
+    }
+  ],
+  "analyzed_at": "2026-11-22T04:00:00Z"
+}`}</pre>
+          </div>
+        </section>
+
+        {/* Endpoint 2: GET /api/v1/health */}
         <section className="p-5 rounded-xl border border-slate-border bg-card space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-border/50 pb-3">
             <div className="flex items-center gap-2.5">
@@ -170,72 +240,7 @@ const scans = await response.json();`,
           </div>
         </section>
 
-        {/* Endpoint 2: POST /api/v1/scan/url */}
-        <section className="p-5 rounded-xl border border-slate-border bg-card space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-border/50 pb-3">
-            <div className="flex items-center gap-2.5">
-              <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary font-mono text-xs font-bold">
-                POST
-              </span>
-              <span className="font-mono text-xs sm:text-sm font-bold text-slate-main">
-                /api/v1/scan/url
-              </span>
-            </div>
-            <span className="text-xs text-slate-muted">Submit URL for Inspection</span>
-          </div>
-
-          <p className="text-xs text-slate-muted">
-            Validates target URL syntax and executes strict SSRF isolation boundary checks.
-          </p>
-
-          {/* Phase 1 Protocol Note */}
-          <div className="p-3 rounded-lg bg-threat-warning/10 border border-threat-warning/20 text-xs text-threat-warning space-y-1">
-            <strong>Phase 1 Contract:</strong> URL syntax and SSRF checks are enforced immediately.
-            The endpoint returns <code>HTTP 501 Not Implemented</code> with a structured Phase 1 preview, confirming that
-            the input pipeline is established while the live ML detection model is queued for Phase 2.
-          </div>
-
-          <div className="relative rounded-lg bg-background border border-slate-border/80 p-3.5 font-mono text-xs overflow-x-auto">
-            <button
-              onClick={() => handleCopy("url", codeSnippets.scanUrl[activeLang])}
-              className="absolute top-2.5 right-2.5 p-1 rounded bg-card text-slate-muted hover:text-white"
-            >
-              {copiedKey === "url" ? <Check size={14} className="text-threat-safe" /> : <Copy size={14} />}
-            </button>
-            <pre className="text-slate-main">{codeSnippets.scanUrl[activeLang]}</pre>
-          </div>
-        </section>
-
-        {/* Endpoint 3: POST /api/v1/scan/email */}
-        <section className="p-5 rounded-xl border border-slate-border bg-card space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-border/50 pb-3">
-            <div className="flex items-center gap-2.5">
-              <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary font-mono text-xs font-bold">
-                POST
-              </span>
-              <span className="font-mono text-xs sm:text-sm font-bold text-slate-main">
-                /api/v1/scan/email
-              </span>
-            </div>
-            <span className="text-xs text-slate-muted">Submit Email for Heuristics</span>
-          </div>
-
-          <p className="text-xs text-slate-muted">
-            Sanitizes email body and headers, checking for spear-phishing urgency patterns and link anchor divergence.
-          </p>
-
-          <div className="relative rounded-lg bg-background border border-slate-border/80 p-3.5 font-mono text-xs overflow-x-auto">
-            <button
-              onClick={() => handleCopy("email", codeSnippets.scanEmail[activeLang])}
-              className="absolute top-2.5 right-2.5 p-1 rounded bg-card text-slate-muted hover:text-white"
-            >
-              {copiedKey === "email" ? <Check size={14} className="text-threat-safe" /> : <Copy size={14} />}
-            </button>
-            <pre className="text-slate-main">{codeSnippets.scanEmail[activeLang]}</pre>
-          </div>
-        </section>
-
-        {/* Endpoint 4: GET /api/v1/scans */}
+        {/* Endpoint 3: GET /api/v1/scans */}
         <section className="p-5 rounded-xl border border-slate-border bg-card space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-border/50 pb-3">
             <div className="flex items-center gap-2.5">
@@ -250,7 +255,7 @@ const scans = await response.json();`,
           </div>
 
           <p className="text-xs text-slate-muted">
-            Retrieves paginated scan history with optional filters for <code>risk_level</code> and <code>scan_type</code>.
+            Retrieves real persisted scan history records with filtering support for <code>risk_level</code> and <code>scan_type</code>.
           </p>
 
           <div className="relative rounded-lg bg-background border border-slate-border/80 p-3.5 font-mono text-xs overflow-x-auto">
@@ -264,22 +269,39 @@ const scans = await response.json();`,
           </div>
         </section>
 
-        {/* Security & SSRF Policy Details */}
-        <section id="status-codes" className="p-5 rounded-xl border border-slate-border bg-background-secondary/40 space-y-3">
-          <h3 className="text-sm font-bold text-slate-main uppercase tracking-wider flex items-center gap-2">
+        {/* Scoring Methodology & Boundaries */}
+        <section className="p-5 rounded-xl border border-slate-border bg-background-secondary/40 space-y-3">
+          <h3 className="text-sm font-bold text-slate-main uppercase tracking-wider flex items-center gap-2 font-mono">
             <Lock size={15} className="text-primary" />
-            <span>Security Architecture & SSRF Policy</span>
+            <span>Risk Scoring Thresholds & Guidelines</span>
           </h3>
           <div className="text-xs text-slate-muted space-y-2 leading-relaxed">
             <p>
-              PhishLens enforces a strict <strong>Zero-Fetch Sandbox Model</strong>:
+              The Phase 2 risk scoring engine operates transparently using strict thresholds:
             </p>
-            <ul className="list-disc pl-5 space-y-1">
-              <li>Outbound network connections to user-submitted targets are never initiated by the server.</li>
-              <li>IPv4 and IPv6 loopback (<code>127.0.0.1</code>, <code>::1</code>) and RFC 1918 subnets are quarantined.</li>
-              <li>Cloud hypervisor metadata IPs (<code>169.254.169.254</code>) trigger immediate <code>HTTP 422</code> blocks.</li>
-              <li>Target contents and sensitive emails are masked using salted SHA-256 signatures in log storage.</li>
-            </ul>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-2 font-mono">
+              <div className="p-3 rounded bg-card border border-threat-safe/30">
+                <span className="text-threat-safe font-bold block">0 – 24: LOW RISK</span>
+                <span className="text-[11px] text-slate-muted mt-1 block">
+                  No significant suspicious markers. Caution still advised.
+                </span>
+              </div>
+              <div className="p-3 rounded bg-card border border-threat-warning/30">
+                <span className="text-threat-warning font-bold block">25 – 59: SUSPICIOUS</span>
+                <span className="text-[11px] text-slate-muted mt-1 block">
+                  Moderate anomalies (e.g. shortening, non-standard port).
+                </span>
+              </div>
+              <div className="p-3 rounded bg-card border border-threat-danger/30">
+                <span className="text-threat-danger font-bold block">60 – 100: HIGH RISK</span>
+                <span className="text-[11px] text-slate-muted mt-1 block">
+                  Compounded threats (IP host, @ authority spoofing, brand targeting).
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-subtle">
+              * Important: A low score does not guarantee a URL is harmless; a high score indicates significant structural risk, not legal proof of malicious intent.
+            </p>
           </div>
         </section>
       </main>

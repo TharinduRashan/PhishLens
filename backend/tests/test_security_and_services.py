@@ -28,12 +28,12 @@ class TestPhishLensBackend(unittest.TestCase):
         self.assertEqual(url, "https://example.com/test/path?q=1")
         self.assertEqual(host, "example.com")
 
-    def test_url_inspection_phase1(self):
+    def test_url_inspection_phase2(self):
         res = URLInspectionService.process_url_submission("https://paypal-verification.com/login")
-        self.assertEqual(res["risk_level"], "UNKNOWN")
-        self.assertEqual(res["engine_status"], "engine_pending")
-        self.assertIn("Phase 1: Project Foundation", res["summary"])
-        self.assertTrue(len(res["indicators"]) >= 4)
+        self.assertIn(res["risk_level"], ("SUSPICIOUS", "HIGH"))
+        self.assertEqual(res["status"], "completed")
+        self.assertTrue(len(res["indicators"]) >= 2)
+        self.assertIn("features", res)
 
     def test_email_inspection_phase1(self):
         res = EmailInspectionService.process_email_submission(
